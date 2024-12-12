@@ -1,0 +1,147 @@
+
+/*
+Blocking Queue | Bounded Buffer | Consumer Producer
+A blocking queue is defined as a queue which blocks the caller of the enqueue method if there’s no more capacity to add the new item being enqueued.
+Similarly, the queue blocks the dequeue caller if there are no items in the queue. 
+Also, the queue notifies a blocked enqueuing thread when space becomes available and a blocked dequeuing thread when an item becomes available in the queue.
+
+*/
+
+class Demonstration {
+    public static void main( String args[] ) throws Exception{
+       final BlockingQueue<Integer> q = new BlockingQueue<Integer>(5);
+
+        Thread t1 = new Thread(new Runnable() {
+
+            @Override
+            public void run() {
+                try {
+                    for (int i = 0; i < 50; i++) {
+                        q.enqueue(new Integer(i));
+                        System.out.println("enqueued " + i);
+                    }
+                } catch (InterruptedException ie) {
+
+                }
+            }
+        });
+
+        Thread t2 = new Thread(new Runnable() {
+
+            @Override
+            public void run() {
+                try {
+                    for (int i = 0; i < 25; i++) {
+                        System.out.println("Thread 2 dequeued: " + q.dequeue());
+                    }
+                } catch (InterruptedException ie) {
+
+                }
+            }
+        });
+
+        Thread t3 = new Thread(new Runnable() {
+
+            @Override
+            public void run() {
+                try {
+                    for (int i = 0; i < 25; i++) {
+                        System.out.println("Thread 3 dequeued: " + q.dequeue());
+                    }
+                } catch (InterruptedException ie) {
+
+                }
+            }
+        });
+
+        t1.start();
+        Thread.sleep(4000);
+        t2.start();
+
+        t2.join();
+
+        t3.start();
+        t1.join();
+        t3.join();
+    }
+}
+
+// The blocking queue class
+class BlockingQueue<T> {
+
+    T[] array;
+    Object lock = new Object();
+    int size = 0;
+    int capacity;
+    int head = 0;
+    int tail = 0;
+
+    @SuppressWarnings("unchecked")
+    public BlockingQueue(int capacity) {
+        // The casting results in a warning
+        array = (T[]) new Object[capacity];
+        this.capacity = capacity;
+    }
+
+    public void enqueue(T item) throws InterruptedException {
+
+        synchronized (lock) {
+            // wait for queue to have space
+            while (size == capacity) {
+                lock.wait();
+            }
+            // reset tail to the beginning if the tail is already
+           // at the end of the backing array
+            if (tail == capacity) {
+                tail = 0;
+            }
+           // place the item in the array
+            array[tail] = item;
+            size++;
+            tail++;
+            // don't forget to notify any other threads waiting on a change in value of size. 
+             //There might be consumers waiting for the queue to have atleast one element
+            lock.notifyAll();
+        }
+    }
+//we are calling notifyAll() method. Since we just added an item to the queue, it is possible that a consumer thread is blocked in the dequeue method 
+//of the queue class waiting for an item to become available so it’s necessary we send a signal to wake up any waiting threads.
+//If no thread is waiting, then the signal will simply go unnoticed and be ignored, which wouldn’t affect the correct working of our class. 
+//This would be an instance of missed signal that we have talked about earlier.
+
+
+    public T dequeue() throws InterruptedException {
+
+        T item = null;
+        synchronized (lock) {
+            // wait for atleast one item to be enqueued
+            while (size == 0) {
+                lock.wait();
+            }
+            // reset head to start of array if its past the array
+            if (head == capacity) {
+                head = 0;
+            }
+             // store the reference to the object being dequeued
+             // and overwrite with null  
+            item = array[head];
+            array[head] = null;
+            head++;
+            size--;
+             // don't forget to call notify, there might be another thread
+            // blocked in the enqueue method.
+            lock.notifyAll();
+        }
+
+        return item;
+    }
+}
+
+/*
+In both the enqueue() and dequeue() methods we use the notifyAll() method instead of the notify() method.
+The reason behind the choice is very crucial to understand. Consider a situation with two producer threads and one consumer thread all working with a queue of size one.
+It’s possible that when an item is added to the queue by one of the producer threads, the other two threads are blocked waiting on the condition variable. 
+If the producer thread after adding an item invokes notify() it is possible that the other producer thread is chosen by the system to resume execution. 
+The woken-up producer thread would find the queue full and go back to waiting on the condition variable, causing a deadlock. 
+Invoking notifyAll() assures that the consumer thread also gets a chance to wake up and resume execution.
+*/
